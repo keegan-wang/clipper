@@ -1,15 +1,29 @@
 import boto3
+import os
 import time
 import cv2
+import numpy as np
 from collections import defaultdict
+import re
+
 
 # Initialize Rekognition client and S3 client
-rekognition = boto3.client('rekognition')
-s3_client = boto3.client('s3')
+rekognition = boto3.client(
+    'rekognition',
+    region_name=os.getenv("AWS_REGION"),
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+)
+s3_client = boto3.client(
+    's3',
+    region_name=os.getenv("AWS_REGION"),
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+)
 
 # Video details
 bucket_name = 'clipperth25'
-video_file_name = 'jelly.mov'
+video_file_name = 'midnight.mp4'
 local_video_path = 'local_video.mp4'  # Local path to save the downloaded video
 
 # Download video from S3 to local machine
@@ -29,24 +43,39 @@ def start_video_analysis():
         response = rekognition.start_label_detection(
             Video={'S3Object': {'Bucket': bucket_name, 'Name': video_file_name}}
         )
-        job_id = response['JobId']
+        job_id = response.get('JobId', '')
+        print(f"Raw JobId from start_label_detection: {job_id}")  # Add this line
+        if not is_valid_job_id(job_id):
+            print(f"Invalid JobId: {job_id}")
+            return None
         print(f"Job started with ID: {job_id}")
         return job_id
     except Exception as e:
         print(f"Error starting video analysis: {e}")
         exit()
 
+# Validate length and format of JobId
+def is_valid_job_id(job_id):
+    if len(job_id) > 64:
+        print(f"Invalid JobId length: {len(job_id)} (max 64 characters allowed).")
+        return False
+    if re.match(r'^[a-zA-Z0-9-_]{1,64}$', job_id):
+        print(f"Valid JobId: {job_id}")
+        return True
+    else:
+        print(f"Invalid JobId format: {job_id}")
+        return False
+
+
 # Track label frequencies over time
 def track_label_frequencies(job_id):
-    label_frequencies = defaultdict(list)  # A dictionary to store the frequency of labels per timestamp
-
+    label_frequencies = defaultdict(list)
     try:
         while True:
             result = rekognition.get_label_detection(JobId=job_id)
             status = result['JobStatus']
             if status == 'SUCCEEDED':
                 print("Video analysis succeeded.")
-                # Track frequencies of labels over time
                 for label in result['Labels']:
                     timestamp = label['Timestamp']
                     label_name = label['Label']['Name']
@@ -55,35 +84,46 @@ def track_label_frequencies(job_id):
             elif status == 'FAILED':
                 print("Video analysis failed.")
                 return None
+
             print("Waiting for the job to complete...")
-            time.sleep(5)
+            time.sleep(5)  # Wait for 5 seconds before polling again
     except Exception as e:
         print(f"Error retrieving video analysis results: {e}")
         exit()
 
+
+
 # Extract sub-video from the original video based on start and end time using OpenCV
 def extract_sub_video(input_video, start_time, end_time, output_video):
     try:
-        # Open the input video using OpenCV
         cap = cv2.VideoCapture(input_video)
+        if not cap.isOpened():
+            print(f"Error opening video file {input_video}")
+            return
+        
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        print(f"Video Width: {frame_width}, Height: {frame_height}, FPS: {fps}, Total Frames: {total_frames}")
 
-        # Create VideoWriter to save the output sub-video
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for .mp4 format
+        duration = total_frames / fps
+        print(f"Extracting from {start_time:.2f}s to {end_time:.2f}s. Video duration: {duration:.2f}s")
+
+        if end_time > duration:
+            end_time = duration
+
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_video, fourcc, fps, (frame_width, frame_height))
 
-        # Start reading from the video and write frames to the output video
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_time * fps)  # Set starting point
-        end_frame = end_time * fps
+        cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
+        end_time_ms = end_time * 1000
         while cap.isOpened():
             ret, frame = cap.read()
-            current_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
-
-            if not ret or current_frame > end_frame:
+            current_time = cap.get(cv2.CAP_PROP_POS_MSEC)
+            if not ret or current_time > end_time_ms:
                 break
-            out.write(frame)  # Write the current frame to the sub-video
+            out.write(frame)
 
         cap.release()
         out.release()
@@ -91,55 +131,54 @@ def extract_sub_video(input_video, start_time, end_time, output_video):
     except Exception as e:
         print(f"Error extracting sub-video: {e}")
 
-# Divide video into segments based on label frequency changes
-def segment_video_based_on_frequencies(label_frequencies, input_video):
-    # Define a threshold for frequency change detection (you can adjust this value)
-    threshold = 0.2  # Adjust as needed to determine significant changes
-    last_labels = None
-    segments = []
-    start_time = 0
 
-    # Analyze label frequencies to detect where to split the video
+# Suggest sub-video division points based on dynamically determined threshold
+def suggest_subvideo_divisions_dynamic_threshold(label_frequencies):
+    frequency_changes = []
+    last_labels = None
     for timestamp, labels in sorted(label_frequencies.items()):
-        # Convert list of labels to a set for unique labels
         current_labels = set(labels)
-        
-        # Calculate frequency change (if significant, consider this a segment boundary)
         if last_labels is not None:
             change = len(current_labels.symmetric_difference(last_labels)) / len(current_labels.union(last_labels))
-            if change > threshold:  # Significant change in label frequencies
-                end_time = timestamp / 1000  # Convert ms to seconds
-                # Create the sub-video from start_time to end_time
-                segment_output = f"sub_video_{len(segments)}.mp4"
-                extract_sub_video(input_video, start_time, end_time, segment_output)
-                segments.append((start_time, end_time))
-                start_time = end_time
-
+            frequency_changes.append(change)
         last_labels = current_labels
 
-    # Extract the final segment
-    end_time = max(label_frequencies.keys()) / 1000  # Use the last timestamp
-    segment_output = f"sub_video_{len(segments)}.mp4"
-    extract_sub_video(input_video, start_time, end_time, segment_output)
-    segments.append((start_time, end_time))
+    frequency_changes = np.array(frequency_changes)
+    mean_change = np.mean(frequency_changes)
+    std_dev_change = np.std(frequency_changes)
+    thresh = 1.8
+    dynamic_threshold = mean_change + thresh * std_dev_change
 
-    return segments
+    print(f"Dynamic threshold based on mean and standard deviation: {dynamic_threshold:.4f}")
+
+    last_labels = None
+    divisions = []
+    start_time = 0
+
+    for timestamp, labels in sorted(label_frequencies.items()):
+        current_labels = set(labels)
+        if last_labels is not None:
+            change = len(current_labels.symmetric_difference(last_labels)) / len(current_labels.union(last_labels))
+            if change > dynamic_threshold:
+                end_time = timestamp / 1000
+                divisions.append((start_time, end_time))
+                start_time = end_time
+        last_labels = current_labels
+
+    end_time = max(label_frequencies.keys()) / 1000
+    divisions.append((start_time, end_time))
+    return divisions
 
 # Main function
 def main():
-    # Step 1: Download video from S3
     download_video_from_s3()
-
-    # Step 2: Start Rekognition video analysis
     job_id = start_video_analysis()
-
-    # Step 3: Track label frequencies
     label_frequencies = track_label_frequencies(job_id)
-
-    # Step 4: Segment video based on label frequencies
-    segments = segment_video_based_on_frequencies(label_frequencies, local_video_path)
-
-    print(f"Created {len(segments)} sub-video(s)")
+    divisions = suggest_subvideo_divisions_dynamic_threshold(label_frequencies)
+    print(f"Suggested sub-video divisions:")
+    for i, (start, end) in enumerate(divisions):
+        print(f"Sub-video {i+1}: Start = {start:.2f}s, End = {end:.2f}s")
+        extract_sub_video(local_video_path, start, end, f"sub_video_{i}.mp4")
 
 if __name__ == "__main__":
     main()
