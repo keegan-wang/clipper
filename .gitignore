@@ -1,0 +1,31 @@
+# Ignore YOLO models and weights
+*.pt
+*.pth
+models/
+
+# Ignore YOLO logs and results
+runs/
+logs/
+results/
+
+# Ignore cache and temporary files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore Python virtual environments
+venv/
+.env/
+.venv/
+env/
+
+# Ignore system and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Ignore PyInstaller build artifacts
+dist/
+build/
+*.spec
