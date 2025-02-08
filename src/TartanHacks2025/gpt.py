@@ -10,6 +10,7 @@ import requests
 import json
 import asyncio
 import time
+import standardize
 
 # client = OpenAI(api_key="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")
 client = openai.AsyncOpenAI(api_key='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')
@@ -19,7 +20,7 @@ def generate_metadata(filepath, output_file):
     video = filepath
     # video = "data/bison.mp4"
     userprompt = "prompts/userprompt.txt"
-    systemprompt = "prompts/systemprompt.txt"
+    systemprompt = "prompts/singlesystemprompt.txt"
     batch_size = 1
     start_time = time.time()
 
@@ -53,7 +54,9 @@ def generate_metadata(filepath, output_file):
     video.release()
     print(len(base64Frames), "frames read.")
 
-    asyncio.run(process_batches(base64Frames, batch_size, output_file,systemprompt))
+    asyncio.run(process_batches(base64Frames, batch_size, "output/output.json",systemprompt))
+
+    standardize.standardize_json("output/output.json", output_file)
 
     print(f"Total time taken: {time.time() - start_time} seconds")
 
@@ -169,4 +172,4 @@ async def process_batches(base64Frames, batch_size, output_file,systemprompt):
     print(f"✅ Output saved to {output_file}")
 
 # Run async function
-generate_metadata("data/bigbigfish.mp4", "output/output.json")
+generate_metadata("data/bigbigfish.mp4", "output/output_standardized.json")
