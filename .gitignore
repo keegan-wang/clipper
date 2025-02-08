@@ -29,3 +29,9 @@ Thumbs.db
 dist/
 build/
 *.spec
+
+# Ignore Video files
+
+.mp4
+.mp3
+.txt
