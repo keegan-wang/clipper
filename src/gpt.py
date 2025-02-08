@@ -39,6 +39,7 @@ while video.isOpened():
 
 
 video.release()
+
 print(len(base64Frames), "frames read.")
 
 def api_call(image):
@@ -84,9 +85,14 @@ def api_call(image):
     #     print(f"Error at second {second}: {str(e)}")
     #     frame_data[second] = {"error": str(e)}
 
-    result = client.chat.completions.create(**params)
-    print(result)
-    print(result.choices[0].message.content)
+    try:
+        result = client.chat.completions.create(**params)
+        identified_objects = json.loads(result.choices[0].message.content)  # Parse JSON response
+        frame_data[second] = identified_objects
+        print(f"Processed second {second}: {identified_objects}")
+    except Exception as e:
+        print(f"Error at second {second}: {str(e)}")
+        frame_data[second] = {"error": str(e)}
 
 for frame in base64Frames:
     api_call(frame)
