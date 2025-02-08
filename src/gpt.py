@@ -42,7 +42,7 @@ video.release()
 
 print(len(base64Frames), "frames read.")
 
-def api_call(image):
+#def api_call(image):
     # PROMPT_MESSAGES = [
     #         {
     #             "role": "user",
@@ -56,22 +56,22 @@ def api_call(image):
     
     # print(PROMPT_MESSAGES)
     
-    PROMPT_MESSAGES = [
-        {
-            "role": "user",
-            "content": [
-                "Analyze these frames and identify all objects in each. Return the output as a JSON dictionary with timestamps as keys and detected objects as values.",
-                *base64Frames,  # Unpack all images in the message
-            ],
-        }
-    ]
-    print(PROMPT_MESSAGES)
+   # PROMPT_MESSAGES = [
+      #  {
+          #  "role": "user",
+          #  "content": [
+          #      "Analyze these frames and identify all objects in each. Return the output as a JSON dictionary with timestamps as keys and detected objects as values.",
+          #      *base64Frames,  # Unpack all images in the message
+          #  ],
+      #  }
+ #   ]
+ #   print(PROMPT_MESSAGES)
 
-    params = {
-        "model": "gpt-4o",
-        "messages": PROMPT_MESSAGES,
-        "max_tokens": 200,
-    }
+  #  params = {
+#        "model": "gpt-4o",
+#        "messages": PROMPT_MESSAGES,
+#        "max_tokens": 200,
+#    }
     # try:
     #     result = client.chat.completions.create(**params)
     #     identified_objects = json.loads(result.choices[0].message.content)  # Parse JSON response
@@ -85,14 +85,48 @@ def api_call(image):
     #     print(f"Error at second {second}: {str(e)}")
     #     frame_data[second] = {"error": str(e)}
 
+#    try:
+ #       result = client.chat.completions.create(**params)
+ #       identified_objects = json.loads(result.choices[0].message.content)  # Parse JSON response
+ #       frame_data[second] = identified_objects
+#        print(f"Processed second {second}: {identified_objects}")
+ #   except Exception as e:
+ #       print(f"Error at second {second}: {str(e)}")
+ #       frame_data[second] = {"error": str(e)}
+
+#for frame in base64Frames:
+#    api_call(frame)
+
+
+def api_call(image):
+    PROMPT_MESSAGES = [
+        {
+            "role": "user",
+            "content": "Analyze these frames and identify all objects in each. Return the output as a JSON dictionary with timestamps as keys and detected objects as values."
+        }
+    ]
+
+    # Add each frame as a separate message
+    for frame in base64Frames:
+        PROMPT_MESSAGES.append({
+            "role": "user",
+            "content": {"image": frame["image"], "resize": frame["resize"], "timestamp": frame["timestamp"]}
+        })
+
+    print(PROMPT_MESSAGES)
+
+    params = {
+        "model": "gpt-4o",
+        "messages": PROMPT_MESSAGES,
+        "max_tokens": 200,
+    }
+
     try:
         result = client.chat.completions.create(**params)
-        identified_objects = json.loads(result.choices[0].message.content)  # Parse JSON response
-        frame_data[second] = identified_objects
-        print(f"Processed second {second}: {identified_objects}")
+        print(result)
+        print(result.choices[0].message.content)
     except Exception as e:
-        print(f"Error at second {second}: {str(e)}")
-        frame_data[second] = {"error": str(e)}
+        print(f"Error during API call: {str(e)}")
 
 for frame in base64Frames:
     api_call(frame)
