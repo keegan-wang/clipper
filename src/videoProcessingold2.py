@@ -1,6 +1,19 @@
 import os
 import json
-from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip
+from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip, afx
+from nltk.tokenize import sent_tokenize
+import random
+
+def load_metadata(metadata_folder):
+    """Load metadata for uploaded videos."""
+    metadata = {}
+    for file in os.listdir(metadata_folder):
+        if file.endswith("_objects.json"):
+            video_name = file.replace("_objects.json", ".mp4")
+            with open(os.path.join(metadata_folder, file), "r") as f:
+                metadata[video_name] = json.load(f)
+    return metadata
+
 
 def edit_video_with_matches(matches_path, audio_path, clips_folder, output_path):
     """Create a video using the matched clips with synchronized audio."""
@@ -24,12 +37,7 @@ def edit_video_with_matches(matches_path, audio_path, clips_folder, output_path)
         print(f"Error: Audio file not found at {audio_path}")
         return
 
-    try:
-        narration_audio = AudioFileClip(audio_path)
-    except Exception as e:
-        print(f"Error loading audio file: {e}")
-        return
-
+    narration_audio = AudioFileClip(audio_path)
     total_narration_duration = narration_audio.duration
     sentence_duration = total_narration_duration / len(matched_clips)
 
@@ -40,28 +48,16 @@ def edit_video_with_matches(matches_path, audio_path, clips_folder, output_path)
     video_clips = []
     for index, match in enumerate(matched_clips):
         video_file = os.path.join(clips_folder, match["video"])
-        start_time = match["timestamp"]
-        end_time = start_time + sentence_duration
+        timestamp = match["timestamp"]
 
         if not os.path.exists(video_file):
             print(f"Video file not found: {video_file}. Skipping.")
             continue
 
+        print(f"Using video '{video_file}' for sentence: '{match['sentence']}'")
         try:
-            with VideoFileClip(video_file) as clip:
-                # Ensure the clip doesn't exceed video length
-                if clip.duration <= 0:
-                    print(f"Video file {video_file} has zero duration. Skipping.")
-                    continue
-
-                end_time = min(end_time, clip.duration)
-                if start_time >= clip.duration:
-                    print(f"Start time exceeds video duration for {video_file}. Skipping.")
-                    continue
-
-                print(f"Processing video '{video_file}' from {start_time} to {end_time} seconds.")
-                video_clip = clip.subclip(start_time, end_time)
-                video_clips.append(video_clip)
+            clip = VideoFileClip(video_file).subclip(timestamp, timestamp + sentence_duration)
+            video_clips.append(clip)
         except Exception as e:
             print(f"Error processing clip '{video_file}': {e}")
             continue
@@ -72,11 +68,7 @@ def edit_video_with_matches(matches_path, audio_path, clips_folder, output_path)
 
     # Step 4: Concatenate video clips
     print("Concatenating video clips...")
-    try:
-        final_video = concatenate_videoclips(video_clips, method="compose")
-    except Exception as e:
-        print(f"Error during video concatenation: {e}")
-        return
+    final_video = concatenate_videoclips(video_clips)
 
     # Step 5: Sync the narration audio with the video
     if narration_audio.duration > final_video.duration:
@@ -88,19 +80,12 @@ def edit_video_with_matches(matches_path, audio_path, clips_folder, output_path)
     # Step 6: Export the final video
     print(f"Exporting video to {output_path}...")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    try:
-        final_video.write_videofile(
-            output_path, codec="libx264", audio_codec="aac", fps=24, threads=4, preset="ultrafast"
-        )
-    except Exception as e:
-        print(f"Error during video export: {e}")
-        return
+    final_video.write_videofile(output_path, codec="libx264", audio_codec="aac")
 
     if os.path.exists(output_path):
         print(f"Video saved successfully to {output_path}")
     else:
         print("Error: Video file was not created.")
-
 
 # Example usage
 edit_video_with_matches(

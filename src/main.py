@@ -1,5 +1,6 @@
 import subprocess
 import os
+import sys
 
 def main():
     # Define paths
@@ -10,36 +11,60 @@ def main():
     output_path = "outputs/final_video.mp4"
     clips_folder = "data/clips"
 
-    # Ensure all uploaded videos are listed
-    uploaded_videos = [os.path.join(clips_folder, f) for f in os.listdir(clips_folder) if f.endswith((".mp4", ".mov"))]
-
-    if not uploaded_videos:
-        print("No videos found in the clips folder. Exiting.")
-        return
-
-    print("Videos to be analyzed:", uploaded_videos)
+    print("Starting main function...")
 
     try:
         # Step 1: Generate AI narration
-        print("Generating AI narration...")
-        subprocess.run(["python3", "src/scriptToTTS.py"], check=True)
+        print("Step 1: Generating AI narration...")
+        run_subprocess(["python3", "src/scriptToTTS.py"])
 
         # Step 2: Detect objects in videos
-        print("Running scene detection...")
-        subprocess.run(["python3", "src/sceneDetection.py"], check=True)
+        #print("Step 2: Running scene detection...")
+        #run_subprocess(["python3", "src/sceneDetection.py"])
 
-        # Step 3: Match script to clips and save matches
-        print("Matching script to clips...")
-        subprocess.run(["python3", "src/scriptMatching.py"], check=True)
+        # Step 3: Match script to video clips
+        print("Step 3: Matching script to clips...")
+        run_subprocess(["python3", "src/scriptMatching.py"])
 
-        # Step 4: Edit and export the final video using matches
-        print("Starting video editing...")
-        subprocess.run(
-            ["python3", "src/videoProcessing.py", script_path, audio_path, matches_path, output_path],
-            check=True
-        )
+        # Step 4: Edit and export the final video
+        print("Step 4: Editing video...")
+        run_subprocess(["python3", "src/videoProcessing.py"])
 
-        print("Video processing completed successfully!")
+        print("Main function completed successfully.")
+
+        print("Step 5 Creating a thumbnail...")
+        run_subprocess(["python3", "src/thumbnailGen/thumbnail_generator.py"])
 
     except subprocess.CalledProcessError as e:
-        print(f"Error during video processing: {e}")
+        print("Error encountered during one of the subprocesses.")
+        handle_error(e)
+
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+def run_subprocess(command):
+    """Run a subprocess with the given command, capturing output."""
+    try:
+        process = subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        print(process.stdout)  # Output any logs from the subprocess
+    except subprocess.CalledProcessError as e:
+        handle_error(e)
+
+def handle_error(e):
+    """Print detailed error information and exit."""
+    print(f"Error during subprocess execution: {e}")
+    print(f"Command: {' '.join(e.cmd)}")
+    if e.stdout:
+        print(f"Standard Output:\n{e.stdout}")
+    if e.stderr:
+        print(f"Standard Error:\n{e.stderr}")
+    sys.exit(1)
+
+if __name__ == "__main__":
+    main()
